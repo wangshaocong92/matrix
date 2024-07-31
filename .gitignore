@@ -1,3 +1,5 @@
 compile_commands.json
 matrix_ws
 .cache
+build
+install

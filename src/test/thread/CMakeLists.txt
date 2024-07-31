@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.15)
 
 project(thread LANGUAGES CXX)
 
+if ($ENV{BUILD_DEBUG})
+    add_definitions("-g -O0 -fno-strict-aliasing -fno-tree-vrp")
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 
 find_package(Boost REQUIRED)
