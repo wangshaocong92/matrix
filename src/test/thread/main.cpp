@@ -1,27 +1,53 @@
 #include "thread/mul_thread_error.h"
 #include <iostream>
+#include <iterator>
 
 int main()
 {
+#define COUNT 100000000
     thread::multi_thread_error m;
     int                        count = 10;
     auto                       now1  = std::chrono::system_clock::now();
     for (auto i = 0; i < count; i++) {
-        m.run(100000000, thread::multi_thread_error::run_type<false, true>());
+        m.run(COUNT, thread::multi_thread_error::run_type<false, true>());
     }
     auto now2 = std::chrono::system_clock::now();
-    std::cout << "no one core mut spend time :" << (now2 - now1).count();
+    std::cout << "spend time :" << (now2 - now1).count() << std::endl;
+
+    // for (auto i = 0; i < count; i++) {
+    //     m.run(COUNT, thread::multi_thread_error::run_type<false, false>());
+    // }
+    // auto now3 = std::chrono::system_clock::now();
+    // std::cout << "spend time :" << (now3 - now2).count() << std::endl;
+    //
+    // for (auto i = 0; i < count; i++) {
+    //     m.run(COUNT, thread::multi_thread_error::run_type<true, false>());
+    // }
+    // auto now4 = std::chrono::system_clock::now();
+    // std::cout << "spend time :" << (now4 - now3).count() << std::endl;
+    //
+    for (auto i = 0; i < count; i++) {
+        m.run(COUNT, thread::multi_thread_error::run_type<true, true>());
+    }
+    auto now5 = std::chrono::system_clock::now();
+    std::cout << "spend time :" << (now5 - now2).count() << std::endl;
+    //
+    // for (auto i = 0; i < count; i++) {
+    //     m.run(COUNT);
+    // }
+    // auto now6 = std::chrono::system_clock::now();
+    // std::cout << "spend time :" << (now6 - now5).count() << std::endl;
+    //
+    for (auto i = 0; i < count; i++) {
+        m.atomic_run(COUNT);
+    }
+    auto now7 = std::chrono::system_clock::now();
+    std::cout << "one cpu spend time :" << (now7 - now5).count() << std::endl;
 
     for (auto i = 0; i < count; i++) {
-        m.run(100000000, thread::multi_thread_error::run_type<false, false>());
+        m.atomic_run(COUNT, false);
     }
-    auto now3 = std::chrono::system_clock::now();
-    std::cout << "no one core no mut spend time :" << (now3 - now2).count();
-
-    for (auto i = 0; i < count; i++) {
-        m.run(100000000, thread::multi_thread_error::run_type<true, false>());
-    }
-    auto now4 = std::chrono::system_clock::now();
-    std::cout << "one core no mut spend time :" << (now4 - now3).count();
+    auto now8 = std::chrono::system_clock::now();
+    std::cout << "not one spend time :" << (now8 - now7).count() << std::endl;
     return 0;
 }

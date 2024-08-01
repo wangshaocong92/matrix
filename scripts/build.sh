@@ -2,7 +2,7 @@
 env=$(cd "$(dirname "$0")"; pwd)/env.sh
 source $env
 cpu=$(cat /proc/cpuinfo | grep "processor" | wc -l)
-# export BUILD_DEBUG=ON
+export BUILD_DEBUG=ON
 
 rm -rf install || true
 rm -rf build || true
