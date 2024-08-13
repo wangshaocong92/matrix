@@ -15,7 +15,7 @@ public:
 private:
     std::vector<int> vec_value_;
     int              value_{0};
-    std::atomic_int atomic_{0};
+    std::atomic_int  atomic_{0};
     std::atomic_bool atomic2_{false};
     std::thread      t1_;
     std::thread      t2_;
