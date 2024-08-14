@@ -93,9 +93,9 @@ vmalloc -> __vmalloc_node -> __vmalloc_node_range ->
     	const void		*caller;
     };
 ```
-* `static struct rb_root free_vmap_area_root = RB_ROOT` 虚拟内存 free tree，全局唯一
-* `static struct vmap_node *vmap_nodes = &single` 所有node的vmap,此变量和cpu的个数有关在 `vmap_init_nodes` 做正式初始化，busy tree 受此管理
-* `static struct vm_struct *vmlist __initdata` 在vmalloc初始化之前的boot期内核也需要一些虚拟内存，故提供此链表来记录.
+* `free_vmap_area_root` 虚拟内存 free tree，全局唯一
+* `vmap_nodes` 所有node的vmap,此变量和cpu的个数有关在 `vmap_init_nodes` 做正式初始化，busy tree 受此管理
+* `vmlist` 在vmalloc初始化之前的boot期内核也需要一些虚拟内存，故提供此链表来记录.
   1. 对象存储在内存的`.init.data` 区，boot结束后释放
   2. 内核使用 `vm_area_register_early`和 ``vm_area_add_early` 函数供外部使用
 ```
@@ -119,36 +119,210 @@ vmalloc -> __vmalloc_node -> __vmalloc_node_range ->
 	    kasan_populate_early_vm_area_shadow(vm->addr, vm->size);
     }
 ```
+* `struct vmap_block_queue` 管理 `vmap_block` 对象的队列,`vmolloc` 中每个cpu存在一个此对象。可使用`raw_cpu_ptr` 取用
+  ```
+  struct vmap_block_queue {
+	  spinlock_t lock;
+	  struct list_head free; /// list_head 设计的真不错，可以接收任何存在此变量的结构体做链表，当前变量为 vmap_block 队列的头指针
+
+	  /*
+	   * An xarray requires an extra memory dynamically to
+	   * be allocated. If it is an issue, we can use rb-tree
+	   * instead.
+	   */
+	  struct xarray vmap_blocks;
+  };
+  ```
+* 
+### 初始化
+#### 调用链
+```
+                                             -> KMEM_CACHE
+start_kernel -> mm_core_init -> vmalloc_init -> vmap_init_nodes(vmap_nodes 初始化)
+                                             -> vmap_init_free_space(free space 初始化)
+```
+#### 代码
+```
+  ...
+	vmap_area_cachep = KMEM_CACHE(vmap_area, SLAB_PANIC);
+  //// vmap_block_queue 暂时不做阐述
+	for_each_possible_cpu(i) {
+		struct vmap_block_queue *vbq;
+		struct vfree_deferred *p;
+
+		vbq = &per_cpu(vmap_block_queue, i);
+		spin_lock_init(&vbq->lock);
+		INIT_LIST_HEAD(&vbq->free);
+		p = &per_cpu(vfree_deferred, i);
+		init_llist_head(&p->list);
+		INIT_WORK(&p->wq, delayed_vfree_work);
+		xa_init(&vbq->vmap_blocks);
+	}
+
+	/*
+	 * Setup nodes before importing vmlist. 因为 busy tree 初始化需要再 vmlist展开之前
+	 */
+	vmap_init_nodes();
+
+	/* Import existing vmlist entries. vmlist 内存储的是 busy va,需要将其加入到 busy tree中*/
+	for (tmp = vmlist; tmp; tmp = tmp->next) {
+		va = kmem_cache_zalloc(vmap_area_cachep, GFP_NOWAIT);
+		if (WARN_ON_ONCE(!va))
+			continue;
+
+		va->va_start = (unsigned long)tmp->addr;
+		va->va_end = va->va_start + tmp->size;
+		va->vm = tmp;
+
+		vn = addr_to_node(va->va_start);
+		insert_vmap_area(va, &vn->busy.root, &vn->busy.head);
+	}
+
+	/*
+	 * Now we can initialize a free vmap space. 
+   * 因为虚拟内存是 0x0~0xf*16的完整内存块，所以知道了busy va。自然free va也就知道了，本函数根据busy tree填充 free tree和list 
+	 */
+	vmap_init_free_space();
+  ...
+```
+
 ### 目标虚拟内存块分配 
 ```
 __get_vm_area_node -> alloc_vmap_area -> __alloc_vmap_area -> find_vmap_lowest_match
 ```
 * __get_vm_area_node
-1. 构造 `vm_struct *area`
-2. 在`free tree`中找到和申请内存大小匹配的 `vmap_area`,并新建新的`va`将其放到 `busy tree` 中
-3. setup `area`
+  1. 构造 `vm_struct *area`
+  2. 在`free tree`中找到和申请内存大小匹配的 `vmap_area`,并新建新的`va`将其放到 `busy tree` 中
+  3. setup `area`
 ```
-static struct vm_struct *__get_vm_area_node(unsigned long size,
-		unsigned long align, unsigned long shift, unsigned long flags,
-		unsigned long start, unsigned long end, int node,
-		gfp_t gfp_mask, const void *caller)
-{
-    ...
-    area = kzalloc_node(sizeof(*area), gfp_mask & GFP_RECLAIM_MASK, node);
-	...
-	va = alloc_vmap_area(size, align, start, end, node, gfp_mask, 0);
-	...
-	setup_vmalloc_vm(area, va, flags, caller);
-    ... 
-	return area;
-}
+  static struct vm_struct *__get_vm_area_node(unsigned long size,
+  		unsigned long align, unsigned long shift, unsigned long flags,
+  		unsigned long start, unsigned long end, int node,
+  		gfp_t gfp_mask, const void *caller)
+  {
+      ...
+      area = kzalloc_node(sizeof(*area), gfp_mask & GFP_RECLAIM_MASK, node);
+  	  ...
+  	  va = alloc_vmap_area(size, align, start, end, node, gfp_mask, 0);
+  	  ...
+  	  setup_vmalloc_vm(area, va, flags, caller);
+      ... 
+  	  return area;
+  }
 ```
 
 ### free tree 维护
-#### free_vmap_area_root 初始化
+* free_vmap_area_root 初始化，`vmap_init_free_space`
+```
+  unsigned long vmap_start = 1;
+	const unsigned long vmap_end = ULONG_MAX;
+	struct vmap_area *free;
+	struct vm_struct *busy;
 
+	/*
+	 *     B     F     B     B     B     F
+	 * -|-----|.....|-----|-----|-----|.....|-
+	 *  |           The KVA space           |
+	 *  |<--------------------------------->|
+	 */
+	for (busy = vmlist; busy; busy = busy->next) {
+		/*
+		 因为在虚拟内存空间free和busy node都是在同一块连续的地址为 0x0-0xffffffffffffffff 大内存之内的。如上图的注释
+		 所以只要是将说有busy遍历过了，free自然也就遍历过了
+		*/
+		if ((unsigned long) busy->addr - vmap_start > 0) {
+			free = kmem_cache_zalloc(vmap_area_cachep, GFP_NOWAIT);
+			if (!WARN_ON_ONCE(!free)) {
+				free->va_start = vmap_start;
+				free->va_end = (unsigned long) busy->addr;
 
-## 物理内存分配
+				insert_vmap_area_augment(free, NULL,
+					&free_vmap_area_root,
+						&free_vmap_area_list);
+			}
+		}
+
+		vmap_start = (unsigned long) busy->addr + busy->size;
+	}
+	//// 前面只处理了中间的，此处处理了最后一段
+	if (vmap_end - vmap_start > 0) {
+		free = kmem_cache_zalloc(vmap_area_cachep, GFP_NOWAIT);
+		if (!WARN_ON_ONCE(!free)) {
+			free->va_start = vmap_start;
+			free->va_end = vmap_end;
+
+			insert_vmap_area_augment(free, NULL,
+				&free_vmap_area_root,
+					&free_vmap_area_list);
+		}
+	}
+```
+* insert free area to tree and list `insert_vmap_area_augment`  `insert_vmap_area` 
+* 根据申请的内存地址大小，重新处理 free tree  `va_clip`
+    1. re free tree 并不会直接取走当前的area，而是在busy tree中插入新建的area所以当前的area需要重新处理
+    2. 如代码所示申请的内存存在于当前area的不同位置将会出现不同的处理方式
+  ```
+  struct vmap_area *lva = NULL;
+  enum fit_type type = classify_va_fit_type(va, nva_start_addr, size);  
+  if (type == FL_FIT_TYPE) {
+  	/*
+  	 * No need to split VA, it fully fits. 直接删掉
+  	 *
+  	 * |               |
+  	 * V      NVA      V
+  	 * |---------------|
+  	 */
+  	unlink_va_augment(va, root);
+  	kmem_cache_free(vmap_area_cachep, va);
+  } else if (type == LE_FIT_TYPE) {
+  	/*
+  	 * Split left edge of fit VA.
+  	 *
+  	 * |       |
+  	 * V  NVA  V   R
+  	 * |-------|-------|
+  	 */
+  	va->va_start += size;
+  } else if (type == RE_FIT_TYPE) {
+  	/*
+  	 * Split right edge of fit VA.
+  	 *
+  	 *         |       |
+  	 *     L   V  NVA  V
+  	 * |-------|-------|
+  	 */
+  	va->va_end = nva_start_addr;
+  } else if (type == NE_FIT_TYPE) {
+  	/*
+  	 * Split no edge of fit VA. 需要添加一个新的area
+  	 *
+  	 *     |       |
+  	 *   L V  NVA  V R
+  	 * |---|-------|---|
+  	 */
+  	 //// 既然左右都有则在左侧新增一个
+  	lva = __this_cpu_xchg(ne_fit_preload_node, NULL); 
+  	/*
+  	 * Build the remainder.
+  	 */
+  	lva->va_start = va->va_start;
+  	lva->va_end = nva_start_addr; 
+  	/*
+  	 * Shrink this VA to remaining size.
+  	 */
+  	va->va_start = nva_start_addr + size;
+  } else {
+  	return -1;
+  } 
+  if (type != FL_FIT_TYPE) {
+  	augment_tree_propagate_from(va);
+  	//// 将新添加的va 添加到红黑树中
+  	if (lva)	/* type == NE_FIT_TYPE */
+  		insert_vmap_area_augment(lva, &va->rb_node, root, head);
+  } 
+  ```
+
+### 物理内存分配
 ```
 __vmalloc_area_node-> vm_area_alloc_pages
 ```
@@ -183,7 +357,24 @@ __vmalloc_area_node-> vm_area_alloc_pages
 	}
 
 ```
-  3. vm_area_alloc_pages 申请物理内存
+  3. vm_area_alloc_pages 申请物理内存,从cpu管理的 `per_cpu_pageset` 列表中找到足够的`page`赋值到`vm_struct`的`page`中
+```
+    ...
+    pcp = pcp_spin_trylock(zone->per_cpu_pageset);
+    pcp_list = &pcp->lists[order_to_pindex(ac.migratetype, 0)];
+    while (nr_populated < nr_pages) { 
+    	page = __rmqueue_pcplist(zone, 0, ac.migratetype, alloc_flags,
+    							pcp, pcp_list);
+      ...
+    	nr_account++; 
+    	prep_new_page(page, 0, gfp, 0);
+    	if (page_list)
+    		list_add(&page->lru, page_list);
+    	else
+    		page_array[nr_populated] = page;
+    	nr_populated++;
+    }
+```
 
 
   
