@@ -186,31 +186,6 @@ start_kernel -> mm_core_init -> vmalloc_init -> vmap_init_nodes(vmap_nodes 初�
   ...
 ```
 
-### 目标虚拟内存块分配 
-```
-__get_vm_area_node -> alloc_vmap_area -> __alloc_vmap_area -> find_vmap_lowest_match
-```
-* __get_vm_area_node
-  1. 构造 `vm_struct *area`
-  2. 在`free tree`中找到和申请内存大小匹配的 `vmap_area`,并新建新的`va`将其放到 `busy tree` 中
-  3. setup `area`
-```
-  static struct vm_struct *__get_vm_area_node(unsigned long size,
-  		unsigned long align, unsigned long shift, unsigned long flags,
-  		unsigned long start, unsigned long end, int node,
-  		gfp_t gfp_mask, const void *caller)
-  {
-      ...
-      area = kzalloc_node(sizeof(*area), gfp_mask & GFP_RECLAIM_MASK, node);
-  	  ...
-  	  va = alloc_vmap_area(size, align, start, end, node, gfp_mask, 0);
-  	  ...
-  	  setup_vmalloc_vm(area, va, flags, caller);
-      ... 
-  	  return area;
-  }
-```
-
 ### free tree 维护
 * free_vmap_area_root 初始化，`vmap_init_free_space`
 ```
@@ -322,9 +297,38 @@ __get_vm_area_node -> alloc_vmap_area -> __alloc_vmap_area -> find_vmap_lowest_m
   } 
   ```
 
+### 虚拟内存分配 
+```
+__get_vm_area_node -> alloc_vmap_area -> __alloc_vmap_area -> find_vmap_lowest_match
+```
+* __get_vm_area_node
+  1. 构造 `vm_struct *area`
+  2. 在`free tree`中找到和申请内存大小匹配的 `vmap_area`,并新建新的`va`将其放到 `busy tree` 中
+  3. setup `area`
+```
+  static struct vm_struct *__get_vm_area_node(unsigned long size,
+  		unsigned long align, unsigned long shift, unsigned long flags,
+  		unsigned long start, unsigned long end, int node,
+  		gfp_t gfp_mask, const void *caller)
+  {
+      ...
+      area = kzalloc_node(sizeof(*area), gfp_mask & GFP_RECLAIM_MASK, node);
+  	  ...
+  	  va = alloc_vmap_area(size, align, start, end, node, gfp_mask, 0);
+  	  ...
+  	  setup_vmalloc_vm(area, va, flags, caller);
+      ... 
+  	  return area;
+  }
+```
+* find_vmap_lowest_match
+  1. 虚拟内存查找说起来就一句话，在free tree中找到一块容量大于需求内存`size`的地址最低的 `va`
+  2. 此处主要使用了subtree_max_size 此成员记录了当前节点和其子孙节点的容量的最大值
+
 ### 物理内存分配
 ```
-__vmalloc_area_node-> vm_area_alloc_pages
+__vmalloc_area_node-> vm_area_alloc_pages 
+                   -> vmap_pages_range
 ```
 * __vmalloc_area_node
   1. area->pages 初始化,若是一个页可以放下pages数组则直接申请一块物理内存，否则申请一块虚拟内存来存储它即回调`__vmalloc_node`
@@ -357,7 +361,7 @@ __vmalloc_area_node-> vm_area_alloc_pages
 	}
 
 ```
-  3. vm_area_alloc_pages 申请物理内存,从cpu管理的 `per_cpu_pageset` 列表中找到足够的`page`赋值到`vm_struct`的`page`中
+  3. `vm_area_alloc_pages` 申请物理内存,从cpu管理的 `per_cpu_pageset` 列表中找到足够的`page`赋值到`vm_struct`的`page`中
 ```
     ...
     pcp = pcp_spin_trylock(zone->per_cpu_pageset);
@@ -375,6 +379,7 @@ __vmalloc_area_node-> vm_area_alloc_pages
     	nr_populated++;
     }
 ```
+  4. `vmap_pages_range` 将虚拟内存和物理内存的映射写入TLB
 
 
   
