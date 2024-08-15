@@ -82,14 +82,14 @@ vmalloc -> __vmalloc_node -> __vmalloc_node_range ->
     	void			*addr;      //// 虚拟内存地址
     	unsigned long		size;   //// 虚拟内存块大小
     	unsigned long		flags;  
-    	struct page		**pages;    //// 1. 指向一个物理页面内存地址(并非实际物理地址，会存在偏移)
+    	struct page		**pages;    //// 1. 指向一个直接内存区内存地址(并非实际物理地址，会存在偏移)
                                     //// 2. 指向一个虚拟内存地址  
                                     //// 3. 此内存地址中保存着一个 nr_pages 大小的page数组
     #ifdef CONFIG_HAVE_ARCH_HUGE_VMALLOC
     	unsigned int		page_order;
     #endif
     	unsigned int		nr_pages;   //// 页面大小
-    	phys_addr_t		phys_addr;
+    	phys_addr_t		phys_addr;    //// ioremap操作会将设备的物理地址赋值给此变量，应该是一个快速访问的工具吧，毕竟虚拟地址也可以转成物理地址
     	const void		*caller;
     };
 ```
@@ -380,6 +380,47 @@ __vmalloc_area_node-> vm_area_alloc_pages
     }
 ```
   4. `vmap_pages_range` 将虚拟内存和物理内存的映射写入TLB
+## IOREMAP 技术
+IOREMAP 提供了一系列物理内存地址转虚拟内存地址的接口。因linux系统在有mmu的情况下不允许直接访问物理内存，所以外加设备的内存和寄存器需要映射到虚拟内存上，这样就可以正常访问了
+### 接口
+* ioremap  _PAGE_CACHE_MODE_UC_MINUS mode下的内存映射
+* ioremap_uc  _PAGE_CACHE_MODE_UC mode下的内存映射
+* ioremap_wc _PAGE_CACHE_MODE_WC mode下的内存映射
+* ioremap_wt _PAGE_CACHE_MODE_WT mode下的内存映射
+* ioremap_encrypted _PAGE_CACHE_MODE_WB mode下，加密的的内存映射，
+* ioremap_prot 自定义缓存模式的内存映射
+* ioremap_cache _PAGE_CACHE_MODE_WB mode下的内存映射
+* iounmap 取消内存映射此接口需要和以上接口成对出现
+  ```
+  enum page_cache_mode {
+	  _PAGE_CACHE_MODE_WB       = 0, /// Write-Back 写回缓存模式是指数据在写入缓存时不会立即写入主存，而是在缓存中的数据被驱逐（替换）时才写回主存。
+	  _PAGE_CACHE_MODE_WC       = 1, /// Write-Combining 合并多个写操作后，再进行一次性写入，以减少写操作的次数。
+	  _PAGE_CACHE_MODE_UC_MINUS = 2, /// Uncached Minus 内存页面是非缓存的，且通常比普通的 Uncached (UC) 模式更为严格。这意味着对这些页面的访问不会利用 CPU 缓存，而且可能会在硬件层面禁止某些优化，如合并  写入操作。
+	  _PAGE_CACHE_MODE_UC       = 3, /// Uncached 数据直接从磁盘读取或写入磁盘，不经过缓存。
+	  _PAGE_CACHE_MODE_WT       = 4, /// Write-Through  每次写操作都会同时写入内存和磁盘，确保数据的一致性。
+	  _PAGE_CACHE_MODE_WP       = 5, /// Write-Protect 在写保护模式下，内存页面是只读的，任何对该页面的写操作都会触发页面错误（Page Fault）。这种模式通常用于保护内存中的关键数据，防止意外或恶意的写操作
+
+	  _PAGE_CACHE_MODE_NUM      = 8
+  };
+  ```
+### 实现
+#### 调用流程
+```                         
+                            -> memtype_reserve(存储当前地址的pcm到memtype_rbroot中)
+ioremap -> __ioremap_caller -> get_vm_area_caller(获取一个 va 并将其加入到busy tree)
+                            -> ioremap_page_range -> vmap_page_range (将虚实映射写入到TLB)
+```
+
+#### 页对齐
+```
+	offset = phys_addr & ~PAGE_MASK;
+	phys_addr &= PAGE_MASK;
+	size = PAGE_ALIGN(last_addr+1) - phys_addr;
+```
+
+
+
+
 
 
   
