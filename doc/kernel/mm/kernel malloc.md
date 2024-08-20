@@ -416,7 +416,9 @@ ioremap -> __ioremap_caller -> get_vm_area_caller(获取一个 va 并将其加�
 	offset = phys_addr & ~PAGE_MASK;
 	phys_addr &= PAGE_MASK;
 	size = PAGE_ALIGN(last_addr+1) - phys_addr;
-```
+``` 
+## vm_map_ram
+将物理page挂载到虚拟内存中。driver的高等级api，在Android中有使用
 
 
 
