@@ -4,7 +4,7 @@ slab 是为了降低内存浪费而引入的技术
 ### 初始化调用链
 
 ### new slab 调用链
-
+<img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/new_slab.png />
 
 
 ## 资源
