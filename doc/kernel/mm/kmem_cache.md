@@ -62,7 +62,7 @@ struct kmem_cache_node {
 };
 ```
 * `struct kmem_cache` slab算法的管理单元，slab的申请主要通过此对象的参数来处理.linux 看起来没有统一管理的概念哪个结构体需要被其管理就可以申请一个
-  ```
+```
   struct kmem_cache {
 #ifndef CONFIG_SLUB_TINY
 	struct kmem_cache_cpu __percpu *cpu_slab;
@@ -127,4 +127,7 @@ struct kmem_cache_node {
 
 	struct kmem_cache_node *node[MAX_NUMNODES]; //// 单个 kmem_cache是跨cpu的，所以需要一个对每个cpu进行管理的node 数组
 };
-  ```
+```
+## slab 内存布局
+### kmem_cache 布局
+### slab 布局
