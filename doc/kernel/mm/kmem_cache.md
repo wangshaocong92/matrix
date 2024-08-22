@@ -131,3 +131,5 @@ struct kmem_cache_node {
 ## slab 内存布局
 ### kmem_cache 布局
 ### slab 布局
+#### slab free item
+<img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/slab_item.jpg />
