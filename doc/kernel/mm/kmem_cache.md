@@ -167,8 +167,14 @@ slab_free -> do_slab_free -> __slab_free(slab_empty) -> discard_slab ->
 * `compound_head` 首个bit位置一来确认其有效可用，所以`compound_head = (ulong)(page *) + 1`,因 `sizeof(page)` 是偶数 正常其地址的右起首个bit不可能位1
 
 #### free_slab
+* `SLAB_TYPESAFE_BY_RCU` rcu 则 走 `call_rcu`,延迟释放
+* 立刻释放走 `__free_slab`
 
 #### __free_slab
+* `__slab_clear_pfmemalloc` page `active` flag 清空
+* `mm_account_reclaimed_pages`  统计和记录在内存回收过程中回收的页面数量
+* `unaccount_slab` 标记一下slab的释放 
+* `__free_pages` 释放pages
 
 
 
