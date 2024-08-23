@@ -63,7 +63,6 @@ struct kmem_cache_node {
 ```
 * `struct kmem_cache` slab算法的管理单元，slab的申请主要通过此对象的参数来处理.linux 看起来没有统一管理的概念哪个结构体需要被其管理就可以申请一个
 ```
-  struct kmem_cache {
 #ifndef CONFIG_SLUB_TINY
 	struct kmem_cache_cpu __percpu *cpu_slab;
 #endif
@@ -126,7 +125,6 @@ struct kmem_cache_node {
 #endif
 
 	struct kmem_cache_node *node[MAX_NUMNODES]; //// 单个 kmem_cache是跨cpu的，所以需要一个对每个cpu进行管理的node 数组
-};
 ```
 ## slab 内存布局
 ### kmem_cache 布局
@@ -135,10 +133,11 @@ struct kmem_cache_node {
 ### slab 布局
 <img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/slab.jpg />
 
-#### slab free item
+### slab free item
 <img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/slab_item.jpg />
 
-#### slab busy item
+### slab busy item
+...
 
 ## 操作
 ### new object 
@@ -155,12 +154,17 @@ slab_free -> do_slab_free -> __slab_free(slab_empty) -> discard_slab ->
     void * object;
     /// 从当前虚拟地址，映射到page 变量的地址
     page *page = virt_to_page(object); => pfn_to_page(__phys_addr(object) >> PAGE_SHIFT = pfn) => (vmemmap + (pfn)); 
+    folio * folio = page_folio(page); => _compound_head(page) => page->compound_head - 1(page 不是fake head page) 
+                                                              => page_fixed_fake_head
 ```
-##### 虚拟地址，映射到page的地址映射
+##### `page` 和物理地址的映射关系
 <img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/page_to_ph.png />
 
 * page的数组是保存在vmolloc区的首部，且为虚拟地址存储
 * page的数组的排序和内存物理地址是一致的，一个page就是物理地址同位置的页
+##### 复合`page`寻址
+* 复合`page`中，`head page`保存大多数块的数据,`tail pages` 存储各自的数据。同时`tail pages` 的 `compound_head` 参数中存储着`head page`的地址
+* `compound_head` 首个bit位置一来确认其有效可用，所以`compound_head = (ulong)(page *) + 1`,因 `sizeof(page)` 是偶数 正常其地址的右起首个bit不可能位1
 
 #### free_slab
 
