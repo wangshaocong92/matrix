@@ -130,6 +130,42 @@ struct kmem_cache_node {
 ```
 ## slab 内存布局
 ### kmem_cache 布局
+<img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/kmem_cache.jpg />
+
 ### slab 布局
+<img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/slab.jpg />
+
 #### slab free item
 <img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/slab_item.jpg />
+
+#### slab busy item
+
+## 操作
+### new object 
+### free object
+`slab_free`
+```
+                                                                       -> call_rcu(SLAB_TYPESAFE_BY_RCU)
+slab_free -> do_slab_free -> __slab_free(slab_empty) -> discard_slab ->  
+                                                                       -> __free_slab
+```
+#### virt_to_slab
+从object的虚拟地址找到相应的slab对象
+```
+    void * object;
+    /// 从当前虚拟地址，映射到page 变量的地址
+    page *page = virt_to_page(object); => pfn_to_page(__phys_addr(object) >> PAGE_SHIFT = pfn) => (vmemmap + (pfn)); 
+```
+##### 虚拟地址，映射到page的地址映射
+<img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/page_to_ph.png />
+
+* page的数组是保存在vmolloc区的首部，且为虚拟地址存储
+* page的数组的排序和内存物理地址是一致的，一个page就是物理地址同位置的页
+
+#### free_slab
+
+#### __free_slab
+
+
+
+
