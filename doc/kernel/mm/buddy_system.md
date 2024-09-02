@@ -9,5 +9,5 @@
   2. `dma` 技术提供外设直接访问内存的方式，但是很多外设的寻址是16位的所以提供此区域方便外设访问
  
 * `page` 物理页的管理对象也是`buddy system`的管理对象(中文很多时候都会有这种歧异>_<)。其在内存初始化是初始化在虚拟映射区的起点位置
-* `numa`和`zone` 关系
+* `numa`和`zone` 关系  
   <img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/numa_node.png />
