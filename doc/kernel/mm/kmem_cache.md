@@ -6,7 +6,8 @@ buddy system 将系统的内存统一经过page统一管理起来。但是我们
 * 不同大小的内存申请会产生很多的小内存空隙，造成内存浪费
   
 `slab` 作为小内存管理的工具，便解决了这些问题。单个`slab`在内存中是一个或者一组页(2^n个页)的整块内存。其内部被抽象的划分为  
-大小相等的内存块，并使用单向链表将`free`的内存块连接起来`struct slab`记录了当前的`slab`的使用细节等信息
+大小相等的内存块，并使用单向链表将`free`的内存块连接起来`struct slab`记录了当前的`slab`的使用细节等信息  
+`kmalloc`的底层便是预先注册了管理不同大小内存的 `kmem_cache`,可以在`slab` 不足时向伙伴系统获取连续的内存块
 ## 调用链
 ### 初始化调用链
 <img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/kmem_init.png />
