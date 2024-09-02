@@ -37,7 +37,9 @@
 ### 内存申请
 linux kernel 申请内存的方式有两种
 * vmalloc 为代表的内存内核区虚拟内存申请，在 VMALLOC_START - VMALLOC_END(64xl4页表: 0xffffc90000000000UL - 0xffffe8ffffffffffUL) 之间
+  vmalloc 倾向于申请大内存即`page size`的整数倍的内存。其本质是物理页映射到虚拟内存页来申请内存的
 * kmalloc 为代表的固定偏移物理内存的申请，其申请区域在内存内核区的直接映射区
+  kmalloc更倾向于申请小内存，其本质是使用了`slab`系统的内存申请
 
 #### 注意：
 * 内核内存申请并不会真的获取到真实的物理地址，以上两种方式获取到的都是虚拟内存地址
