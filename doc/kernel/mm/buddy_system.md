@@ -17,6 +17,7 @@
 
 为了减少`cpu`之间对内存的竞争`zone`提供了 每个逻辑`core` 一个的块管理队列 `per_cpu_pageset`.当快使用完之后，符合要请求的快将会被释放到`per_cpu_pageset`中。
 在次申请也会优先从`per_cpu_pageset`当前`core`的队列中获取块
+<img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/zone_per_cpu.jpg  width="800" height="400" alt="zone中的per cpu的内存管理"/>
 
 ## 初始化
 ## 接口
