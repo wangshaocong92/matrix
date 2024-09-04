@@ -20,6 +20,35 @@
 <img src=https://github.com/wangshaocong92/matrix/blob/main/doc/image/zone_per_cpu.jpg  width="800" height="400" alt="zone中的per cpu的内存管理"/>
 
 ## 初始化
+### numa的初始化
+#### 调用链
+```
+/// amd64
+setup_arch -> initmem_init -> x86_numa_init -> numa_init-> numa_register_memblks // 至此全局变量 struct pglist_data *node_data 已初始化完成
+           -> x86_init.paging.pagetable_init -> sparse_init (稀疏内存初始化，此处不做阐述)
+                                             -> zone_sizes_init -> zone_sizes_init -> free_area_init (Initialise all pg_data_t and zone data)
+```
+#### 生成物
+* `numa_meminfo` 在`amd64`架构下`CONFIG_ACPI_NUMA`模式在`x86_acpi_numa_init`函数中初始化。`CONFIG_AMD_NUMA` 模式下`amd_numa_init`。本质是从启动信息中获取numa的配置信息
+  `arm` 是从设备树，`x86_64`是从`pic`自举获得，不一而足。
+  ```
+  //// 为了方便理解才做如下定义，实际上他们的意思可能并非如此
+  struct numa_memblk {
+	  u64			start;  /// node 的地址起点
+	  u64			end;   /// node的地址终点
+	  int			nid;  /// node的id
+  };
+  struct numa_meminfo {
+	  int			nr_blks;  /// node数量
+	  struct numa_memblk	blk[NR_NODE_MEMBLKS]; 
+  };
+  static struct numa_meminfo numa_meminfo __initdata_or_meminfo;  /// 记录numa的配置信息
+  ```
+* `pglist_data *node_data` 最终生成物，此流程仅申请的物理空间。看起来并没有赋值
+* 
+ 
+
+
 ## 接口
 ## 单块的分裂与合并
 ## 引用
