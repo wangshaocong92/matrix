@@ -1,2 +1,1 @@
-add_subdirectory(thread)
-add_subdirectory(fork)
+add_subdirectory(t02284)
