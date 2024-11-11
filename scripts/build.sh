@@ -9,7 +9,7 @@ rm -rf build || true
 # conan
 mkdir build 
 cd build
-conan install ..  --build=missing -o with_cuda=11.8.0 -o with_tensorrt=8.5.3.1  -o with_opencv_gpu=True 
+conan install ..  --build=missing
 cmake $PROJECT_PATH -DCMAKE_INSTALL_PREFIX=$WORKSPACE_PATH/install  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 
 
 make -j$cpu
