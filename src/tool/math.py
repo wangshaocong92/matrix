@@ -1,6 +1,7 @@
 import numpy as np
 
 
+
 def cnk(n,k):
     if k < 0 or k > n:
         print("input error!")
