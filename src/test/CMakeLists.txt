@@ -1,1 +1,1 @@
-add_subdirectory(t02284)
+add_subdirectory(openmp)

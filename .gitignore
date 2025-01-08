@@ -3,3 +3,4 @@ matrix_ws
 .cache
 build
 install
+.ws

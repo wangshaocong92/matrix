@@ -71,10 +71,12 @@ class MatrixConan(ConanFile):
         self.options["pcl"].with_kdtree = True
         self.options["abseil"].shared = True
         self.options["jsoncpp"].shared = True
+        self.options["gtsam"].with_TBB = False
 
 
     def requirements(self):
         self.requires("gtest/1.11.0")
+        self.requires("llvm-openmp/18.1.8")
         self.requires("asio/1.28.0", override=True)
         self.requires("boost/1.83.0", force=True)
         self.requires("protobuf/3.21.12", force=True)
