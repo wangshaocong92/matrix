@@ -1,124 +1,167 @@
-
-## torchrun.py
-from tqdm import tqdm
+import collections
+import math
+import os
+import shutil
+import pandas as pd
 import torch
 import torchvision
-import torch.distributed as dist
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, DistributedSampler
-from torchvision import datasets, transforms, models
-import time
-import os
-import src.test.deeplearn.googLeNet as googLeNet
+from torch import nn
+from d2l import torch as d2l
 
-# 设置 cuDNN 为确定性算法并禁用自动优化
-torch.backends.cudnn.benchmark = False
-torch.backends.cudnn.deterministic = True
 
-Batch_size = 512
-Num_epochs = 50
 
-# 数据准备函数
-def prepared_dataloader(world_size, rank):
-    # 数据预处理，包括随机裁剪、水平翻转、标准化等
-    transform = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ])
+# 如果使用完整的Kaggle竞赛的数据集，设置demo为False
+demo = False
 
-    # 加载 CIFAR-10 数据集
-    train_dataset = datasets.CIFAR10(root="./data",
-                                     train=True,
-                                     download=True,
-                                     transform=transform)
+if demo:
+    data_dir = d2l.download_extract('cifar10_tiny')
+else:
+    data_dir = '../data/cifar-10/'
 
-    # DistributedSampler 确保数据集在多个 GPU 之间被均匀划分
-    train_sampler = DistributedSampler(dataset=train_dataset,
-                                       num_replicas=world_size,
-                                       rank=rank)
+#@save
+def read_csv_labels(fname):
+    """读取fname来给标签字典返回一个文件名"""
+    with open(fname, 'r') as f:
+        # 跳过文件头行(列名)
+        lines = f.readlines()[1:]
+    tokens = [l.rstrip().split(',') for l in lines]
+    return dict(((name, label) for name, label in tokens))
 
-    # DataLoader 加载数据，使用 DistributedSampler 保证多机多卡训练时各 GPU 获取不同的数据
-    train_loader = DataLoader(dataset=train_dataset,
-                              batch_size=Batch_size,
-                              pin_memory=True,
-                              sampler=train_sampler,
-                              num_workers=1)
-    return train_loader
+labels = read_csv_labels(os.path.join(data_dir, 'trainLabels.csv'))
+print('# 训练样本 :', len(labels))
+print('# 类别 :', len(set(labels.values())))
 
-def train(rank, world_size):
-    # 初始化分布式进程组，用于多机多卡训练的调度
-    dist.init_process_group(backend='nccl',
-                            init_method='env://',
-                            world_size=world_size, 
-                            rank=rank)
+#@save
+def copyfile(filename, target_dir):
+    """将文件复制到目标目录"""
+    os.makedirs(target_dir, exist_ok=True)
+    shutil.copy(filename, target_dir)
 
-    # 设置当前进程所使用的 GPU 设备
-    local_rank = rank % torch.cuda.device_count()
-    print(f'Use GPU: {local_rank} for training.')
-    torch.cuda.set_device(local_rank)
-
-    # 准备数据加载器，使用分布式采样器
-    train_loader = prepared_dataloader(world_size, rank)
-
-    # 创建模型并将其移动到 GPU 上
-    model = googLeNet.GoogLeNet().cuda()
-
-    # 使用 DistributedDataParallel 包裹模型，分发到多个 GPU 进行并行训练
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank)
-
-    # 定义损失函数和优化器
-    criterion = nn.CrossEntropyLoss().cuda()
-    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
-
-    # 开始训练过程
-    for epoch in range(Num_epochs):
-        model.train()  # 设置模型为训练模式
-        epoch_start_time = time.time()
-        running_loss = 0.0
-
-        # 仅在 rank 为 0 的进程中显示进度条
-        if rank == 0:
-            progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f'Epoch {epoch+1}/{Num_epochs}')
+#@save
+def reorg_train_valid(data_dir, labels, valid_ratio):
+    """将验证集从原始的训练集中拆分出来"""
+    # 训练数据集中样本最少的类别中的样本数
+    n = collections.Counter(labels.values()).most_common()[-1][1]
+    # 验证集中每个类别的样本数
+    n_valid_per_label = max(1, math.floor(n * valid_ratio))
+    label_count = {}
+    for train_file in os.listdir(os.path.join(data_dir, 'train')):
+        label = labels[train_file.split('.')[0]]
+        fname = os.path.join(data_dir, 'train', train_file)
+        copyfile(fname, os.path.join(data_dir, 'train_valid_test',
+                                     'train_valid', label))
+        if label not in label_count or label_count[label] < n_valid_per_label:
+            copyfile(fname, os.path.join(data_dir, 'train_valid_test',
+                                         'valid', label))
+            label_count[label] = label_count.get(label, 0) + 1
         else:
-            progress_bar = enumerate(train_loader)
+            copyfile(fname, os.path.join(data_dir, 'train_valid_test',
+                                         'train', label))
+    return n_valid_per_label
 
-        # 遍历数据集
-        for batch_idx, (inputs, targets) in progress_bar:
-            inputs, targets = inputs.cuda(non_blocking=True), targets.cuda(non_blocking=True)
-            optimizer.zero_grad()  # 清空梯度
-            outputs = model(inputs)  # 前向传播
-            loss = criterion(outputs, targets)  # 计算损失
-            loss.backward()  # 反向传播
-            optimizer.step()  # 优化一步
+#@save
+def reorg_test(data_dir):
+    """在预测期间整理测试集，以方便读取"""
+    for test_file in os.listdir(os.path.join(data_dir, 'test')):
+        copyfile(os.path.join(data_dir, 'test', test_file),
+                 os.path.join(data_dir, 'train_valid_test', 'test',
+                              'unknown'))
+        
+def reorg_cifar10_data(data_dir, valid_ratio):
+    labels = read_csv_labels(os.path.join(data_dir, 'trainLabels.csv'))
+    reorg_train_valid(data_dir, labels, valid_ratio)
+    reorg_test(data_dir)
 
-            running_loss += loss.item()
+batch_size = 32 if demo else 128
+valid_ratio = 0.1
+reorg_cifar10_data(data_dir, valid_ratio)
 
-            # 如果是主进程，更新进度条显示信息
-            if rank == 0:
-                progress_bar.set_postfix(loss=loss.item())
 
-        # 计算每个 epoch 的平均损失
-        avg_loss = running_loss / len(train_loader)
-        epoch_end_time = time.time()
+transform_train = torchvision.transforms.Compose([
+    # 在高度和宽度上将图像放大到40像素的正方形
+    torchvision.transforms.Resize(40),
+    # 随机裁剪出一个高度和宽度均为40像素的正方形图像，
+    # 生成一个面积为原始图像面积0.64～1倍的小正方形，
+    # 然后将其缩放为高度和宽度均为32像素的正方形
+    torchvision.transforms.RandomResizedCrop(32, scale=(0.64, 1.0),
+                                                   ratio=(1.0, 1.0)),
+    torchvision.transforms.RandomHorizontalFlip(),
+    torchvision.transforms.ToTensor(),
+    # 标准化图像的每个通道
+    torchvision.transforms.Normalize([0.4914, 0.4822, 0.4465],
+                                     [0.2023, 0.1994, 0.2010])])
 
-        # 如果是主进程，打印每个 epoch 的时间和平均损失
-        if rank == 0:
-            print(f'Epoch [{epoch+1}/{Num_epochs}] finished in {(epoch_end_time - epoch_start_time):.2f} seconds.')
-            print(f'Epoch [{epoch+1}/{Num_epochs}] Average Loss: {avg_loss:.4f}')
+transform_test = torchvision.transforms.Compose([
+    torchvision.transforms.ToTensor(),
+    torchvision.transforms.Normalize([0.4914, 0.4822, 0.4465],
+                                     [0.2023, 0.1994, 0.2010])])
 
-        # 在所有进程之间同步，确保所有进程都完成当前 epoch 才能进入下一轮
-        dist.barrier()
 
-    # 训练结束后销毁分布式进程组
-    dist.destroy_process_group()
+train_ds, train_valid_ds = [torchvision.datasets.ImageFolder(
+    os.path.join(data_dir, 'train_valid_test', folder),
+    transform=transform_train) for folder in ['train', 'train_valid']]
 
-if __name__ == '__main__':
-    # 从环境变量中获取进程的 rank 和 world_size，分别表示当前进程的编号和总进程数
-    rank = int(os.environ['RANK'])
-    world_size = int(os.environ['WORLD_SIZE'])
+valid_ds, test_ds = [torchvision.datasets.ImageFolder(
+    os.path.join(data_dir, 'train_valid_test', folder),
+    transform=transform_test) for folder in ['valid', 'test']]
 
-    # 启动训练函数
-    train(rank, world_size)
+
+train_iter, train_valid_iter = [torch.utils.data.DataLoader(
+    dataset, batch_size, shuffle=True, drop_last=True)
+    for dataset in (train_ds, train_valid_ds)]
+
+valid_iter = torch.utils.data.DataLoader(valid_ds, batch_size, shuffle=False,
+                                         drop_last=True)
+
+test_iter = torch.utils.data.DataLoader(test_ds, batch_size, shuffle=False,
+                                        drop_last=False)
+
+def get_net():
+    num_classes = 10
+    net = d2l.resnet18(num_classes, 3)
+    return net
+
+loss = nn.CrossEntropyLoss(reduction="none")
+
+def train(net, train_iter, valid_iter, num_epochs, lr, wd, devices, lr_period,
+          lr_decay):
+    trainer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9,
+                              weight_decay=wd)
+    scheduler = torch.optim.lr_scheduler.StepLR(trainer, lr_period, lr_decay)
+    num_batches, timer = len(train_iter), d2l.Timer()
+    legend = ['train loss', 'train acc']
+    if valid_iter is not None:
+        legend.append('valid acc')
+    animator = d2l.Animator(xlabel='epoch', xlim=[1, num_epochs],
+                            legend=legend)
+    net = nn.DataParallel(net, device_ids=devices).to(devices[0])
+    for epoch in range(num_epochs):
+        net.train()
+        metric = d2l.Accumulator(3)
+        for i, (features, labels) in enumerate(train_iter):
+            timer.start()
+            l, acc = d2l.train_batch_ch13(net, features, labels,
+                                          loss, trainer, devices)
+            metric.add(l, acc, labels.shape[0])
+            timer.stop()
+            if (i + 1) % (num_batches // 5) == 0 or i == num_batches - 1:
+                animator.add(epoch + (i + 1) / num_batches,
+                             (metric[0] / metric[2], metric[1] / metric[2],
+                              None))
+        if valid_iter is not None:
+            valid_acc = d2l.evaluate_accuracy_gpu(net, valid_iter)
+            animator.add(epoch + 1, (None, None, valid_acc))
+        scheduler.step()
+    measures = (f'train loss {metric[0] / metric[2]:.3f}, '
+                f'train acc {metric[1] / metric[2]:.3f}')
+    if valid_iter is not None:
+        measures += f', valid acc {valid_acc:.3f}'
+    print(measures + f'\n{metric[2] * num_epochs / timer.sum():.1f}'
+          f' examples/sec on {str(devices)}')
+    
+
+devices, num_epochs, lr, wd = d2l.try_all_gpus(), 20, 2e-4, 5e-4
+lr_period, lr_decay, net = 4, 0.9, get_net()
+train(net, train_iter, valid_iter, num_epochs, lr, wd, devices, lr_period,
+      lr_decay)
+d2l.plt.show()
