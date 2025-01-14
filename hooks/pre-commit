@@ -1,0 +1,45 @@
+#!/bin/bash
+# Hook script to run clang-tiny on changed files before commit
+
+# List of files to check
+files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(c|cpp|h|hpp)$')
+
+# Exit if no files need to be checked
+if [ -z "$files" ]; then
+    exit 0
+fi
+
+echo "Running clang-format on staged files..."
+
+for file in $files; do
+    if [ -f "$file" ]; then
+        # Make a temporary backup of the file
+        tmpfile=$(mktemp)
+        cp "$file" "$tmpfile"
+
+        # Format the file and replace the original
+        clang-format -i "$file"
+
+        # Compare the formatted file with the original
+        if ! diff -q "$tmpfile" "$file" >/dev/null; then
+            echo "File $file has been formatted. Staging the changes."
+            git add "$file"
+        fi
+
+        # Clean up the temporary file
+        rm "$tmpfile"
+    fi
+done
+echo "Running clang-tidy on staged files..."
+
+# Run clang-tiny for each staged file
+for file in $files; do
+    clang-tidy $file --warnings-as-errors='*' --quiet
+    if [ $? -ne 0 ]; then
+        echo "clang-tidy failed on $file"
+        exit 1
+    fi
+done
+
+echo "commit checks passed."
+exit 0
