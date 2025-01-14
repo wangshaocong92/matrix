@@ -34,7 +34,7 @@ echo "Running clang-tidy on staged files..."
 
 # Run clang-tiny for each staged file
 for file in $files; do
-    clang-tidy $file --warnings-as-errors='*' --quiet -- -std=c++17 -p .
+    clang-tidy $file --warnings-as-errors='*' --quiet
     if [ $? -ne 0 ]; then
         echo "clang-tidy failed on $file"
         exit 1
