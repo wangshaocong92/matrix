@@ -1,3 +1,6 @@
 [submodule "doc/cuda"]
 	path = doc/cuda
 	url = https://github.com/gpu-mode/lectures.git
+[submodule "doc/cuda-course"]
+	path = doc/cuda-course
+	url = https://github.com/Infatoshi/cuda-course
