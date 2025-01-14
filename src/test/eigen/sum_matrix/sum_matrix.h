@@ -1,9 +1,9 @@
 
 #pragma once 
-
+#include <Eigen/Eigen>
 class SumMartix{
 public: 
     SumMartix() = default;
     ~SumMartix() = default;
-    void Sum(const class Eigen::Matrix3d  &a,const class  Eigen::Matrix3d  & b);
+    Eigen::Matrix3d Sum(const  Eigen::Matrix3d  &a,const  Eigen::Matrix3d  & b);
 };
