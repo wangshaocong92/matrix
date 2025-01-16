@@ -4,3 +4,6 @@
 [submodule "doc/cuda-course"]
 	path = doc/cuda-course
 	url = https://github.com/Infatoshi/cuda-course
+[submodule "doc/sgemm_cuda"]
+	path = doc/sgemm_cuda
+	url = https://github.com/siboehm/SGEMM_CUDA
