@@ -2,7 +2,7 @@
 # Hook script to run clang-tiny on changed files before commit
 
 # List of files to check
-files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(c|cpp|h|hpp)$')
+files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(c|cpp|h|hpp|cu|cuh)$')
 
 # Exit if no files need to be checked
 if [ -z "$files" ]; then
