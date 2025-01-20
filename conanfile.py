@@ -21,7 +21,7 @@ class MatrixConan(ConanFile):
     default_options = {
         "with_test": False,
         "with_cuda": "system",
-        "with_opencv_gpu": True,
+        "with_opencv_gpu": False,
         "with_tensorrt": "8.5.3.1",
     }
 
