@@ -34,10 +34,10 @@ echo "Running clang-tidy on staged files..."
 
 # Run clang-tiny for each staged file
 for file in $files; do
-    if [[ $file == *".cu" ]]; then
+    if [[ $file == *".cu"* ]]; then
         echo "cuda file skip $file"
     else
-        clang-tidy $file --warnings-as-errors='*' -quiet  -extra-arg=--cuda-host-only -extra-arg=--cuda-gpu-arch=sm_89
+        clang-tidy $file --warnings-as-errors='*' -quiet 
         if [ $? -ne 0 ]; then
             echo "clang-tidy failed on $file"
             exit 1

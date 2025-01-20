@@ -31,30 +31,28 @@
  **************************************************************************************************/
 
 #include <cuda_runtime.h>
-#include <cutlass/cutlass.h>
+// #include <cutlass/cutlass.h>
 #include <iostream>
 
 /**
  * Panic wrapper for unwinding CUTLASS errors
  */
-constexpr void CUTLASS_CHECK(cutlass::Status error) {
-    if (error != cutlass::Status::kSuccess) {
-        std::cerr << "Got cutlass error: " << cutlassGetStatusString(error) << " at: " << __LINE__
-                  << "\n";
-        exit(EXIT_FAILURE);
+#define CUTLASS_CHECK(error)                                                                       \
+    if (error != cutlass::Status::kSuccess) {                                                      \
+        std::cerr << "Got cutlass error: " << cutlassGetStatusString(error) << " at: " << __FILE__ \
+                  << " " << __LINE__ << "\n";                                                      \
+        exit(EXIT_FAILURE);                                                                        \
     }
-}
 
 /**
  * Panic wrapper for unwinding CUDA runtime errors
  */
-constexpr void CUDA_CHECK(cudaError error) {
-    if (error != cudaSuccess) {
-        std::cerr << "Got bad cuda status: " << cudaGetErrorString(error)
-                  << " at line: " << __LINE__ << "\n";
-        exit(EXIT_FAILURE);
+#define CUDA_CHECK(error)                                                 \
+    if (error != cudaSuccess) {                                           \
+        std::cerr << "Got bad cuda status: " << cudaGetErrorString(error) \
+                  << " at line: " << __FILE__ << " " << __LINE__ << "\n"; \
+        exit(EXIT_FAILURE);                                               \
     }
-}
 
 /**
  * GPU timer for recording the elapsed time across kernel(s) launched in GPU stream

@@ -17,7 +17,6 @@ include_directories(
     $ENV{CUTLASS_DIR}/include
     ${CUDA_INCLUDE_DIRS}
 )
-message(STATUS "LIBC_NAMESPACE: ${LIBC_NAMESPACE}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I$ENV{CUTLASS_DIR}/include \
     -I${CMAKE_CURRENT_SOURCE_DIR}/include \
     -I${CUDA_INCLUDE_DIRS}")
@@ -25,8 +24,14 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -I$ENV{CUTLASS_DIR}/include  \
     -I${CMAKE_CURRENT_SOURCE_DIR}/include \
     -I${CUDA_INCLUDE_DIRS}  -x cu")
 
-add_executable(cuda main.cu)
+# set(CUDA_SOURCES src/matmul.cu)
+# add_library(cuda_lib SHARED ${CUDA_SOURCES})
+# target_compile_options(cuda_lib PRIVATE -G)  # 启用调试信息
+# target_link_libraries(cuda_lib ${CUDA_LIBRARIES})
+add_executable(cuda main.cu src/matmul.cu)
 # 链接编译后生成的库
 target_link_libraries(cuda ${CUDA_LIBRARIES})
 
+
 install(TARGETS cuda DESTINATION bin)
+# install(TARGETS cuda_lib DESTINATION lib)
