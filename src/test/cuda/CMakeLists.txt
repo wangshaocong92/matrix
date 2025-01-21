@@ -30,7 +30,7 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -I$ENV{CUTLASS_DIR}/include  \
 # target_link_libraries(cuda_lib ${CUDA_LIBRARIES})
 add_executable(cuda main.cu src/matmul.cu)
 # 链接编译后生成的库
-target_link_libraries(cuda ${CUDA_LIBRARIES})
+target_link_libraries(cuda ${CUDA_LIBRARIES} ${CUDA_CUBLAS_LIBRARIES})
 
 
 install(TARGETS cuda DESTINATION bin)
