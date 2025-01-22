@@ -74,6 +74,30 @@ int main() {
                   << "ms GFLOPS:" << (flops * repeat_times * 1e-9) / (elapsed_time / 1000)
                   << std::endl;
     }
+
+    std::cout << "sgemm_gmem_coalesce \n";
+    for (auto i = 0; i < 6; i++) {
+        uint64_t m = M << i;
+        uint64_t n = N << i;
+        uint64_t k = K << i;
+        int64_t flops = 2 * m * n * k;
+        MutAnalogMatrix mat(m, n, k);
+        dim3 blockDim(32 * 32);
+        dim3 gridDim((m + 32 - 1) / 32, (n + 32 - 1) / 32);
+        int tmp_repeat_times = repeat_times;
+        timer.start();
+
+        for (; tmp_repeat_times--;) {
+            sgemm_gmem_coalesce<32>
+                <<<gridDim, blockDim>>>(m, n, k, 1.0f, mat.d_A, mat.d_B, 0.0f, mat.d_C);
+        }
+        cudaDeviceSynchronize();
+        timer.stop();
+        auto &&elapsed_time = timer.elapsed_millis();
+        std::cout << "mut size :" << m << " " << "Time: " << elapsed_time / repeat_times
+                  << "ms GFLOPS:" << (flops * repeat_times * 1e-9) / (elapsed_time / 1000)
+                  << std::endl;
+    }
     std::cout << "cublasGemmEx \n";
     for (auto i = 0; i < 6; i++) {
         uint64_t m = M << i;
