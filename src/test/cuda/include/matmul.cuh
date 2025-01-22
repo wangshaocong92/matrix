@@ -57,18 +57,18 @@ __global__ void transpose_matmul(const float *A, const float *B, float *C, int M
                                  float alpha, float beta, cudaStream_t stream_id = nullptr);
 
 /**
- * @brief 
- * 
- * @tparam BLOCKSIZE 
- * @param M 
- * @param N 
- * @param K 
- * @param alpha 
- * @param A 
- * @param B 
- * @param beta 
- * @param C 
- * @return __global__ 
+ * @brief
+ *
+ * @tparam BLOCKSIZE
+ * @param M
+ * @param N
+ * @param K
+ * @param alpha
+ * @param A
+ * @param B
+ * @param beta
+ * @param C
+ * @return __global__
  */
 template <const uint BLOCKSIZE = 32>
 __global__ void sgemm_gmem_coalesce(int M, int N, int K, float alpha, const float *A,
@@ -78,11 +78,12 @@ __global__ void sgemm_gmem_coalesce(int M, int N, int K, float alpha, const floa
 
     if (cRow < M && cCol < N) {
         float tmp = 0.0;
-        for (int i = 0; i < K;
-             ++i) { /// 同一warp
-                    /// 的线程会处理结果的同一行的数据，他们乘矩阵的同一行，即此行原本需要从global加载
-                    /// BLOCKSIZE
-                    // 次的当前 仅需要加载一次。单次warp的执行会顺序加载被乘矩阵的连续BLOCKSIZE内存
+        for (
+            int i = 0; i < K;
+            ++i) { /// 同一warp
+                   /// 的线程会处理结果的同一行的数据，他们乘矩阵的同一行，即此行原本需要从global加载
+                   /// BLOCKSIZE
+                   // 次的当前 仅需要加载一次。单次warp的执行会顺序加载被乘矩阵的连续BLOCKSIZE内存
             tmp += A[ cRow * K + i ] * B[ i * N + cCol ]; // warp 内的线程会同步执行同一条指令
         }
         C[ cRow * N + cCol ] = alpha * tmp + beta * C[ cRow * N + cCol ];
