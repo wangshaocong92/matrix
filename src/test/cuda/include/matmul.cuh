@@ -12,8 +12,20 @@
 #pragma once
 
 #include <cuda_runtime.h>
+
 /**
- * @brief 矩阵乘法的实现
+ * @brief 矩阵转置的实现
+ *
+ * @param out 转置后的矩阵
+ * @param in 原矩阵
+ * @param width 矩阵的宽度
+ * @param height 矩阵的高度
+ */
+
+__global__ void transpose(float *out, const float *in, int width, int height);
+
+/**
+ * @brief 传统矩阵乘法的实现
  *
  * @param A 矩阵A
  * @param B 矩阵B
@@ -27,3 +39,19 @@
  */
 __global__ void navive_matmul(const float *A, const float *B, float *C, int M, int N, int K,
                               float alpha, float beta, cudaStream_t stream_id = nullptr);
+/**
+ * @brief 将被乘矩阵转置后再进行矩阵乘法，空间局部性原则
+ * 
+ * @param A 矩阵A
+ * @param B 矩阵B
+ * @param C 结果矩阵C
+ * @param M A的行数
+ * @param N B的列数
+ * @param K A的列数，B的行数
+ * @param alpha alpha
+ * @param beta beta
+ * @param stream_id cuda流 
+ * @return __global__ 
+ */
+__global__ void transpose_matmul(const float *A, const float *B, float *C, int M, int N, int K,
+                                float alpha, float beta, cudaStream_t stream_id = nullptr);
