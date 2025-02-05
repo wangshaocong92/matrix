@@ -9,7 +9,11 @@ endif()
 include(CheckLanguage)
 check_language(CUDA)
 
+set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_ARCHITECTURES 89)
+
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --ptxas-options=-v")
+
 find_package(CUDA REQUIRED)
 # 调用函数需要的头文件
 include_directories(
@@ -26,7 +30,6 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -I$ENV{CUTLASS_DIR}/include  \
 
 # set(CUDA_SOURCES src/matmul.cu)
 # add_library(cuda_lib SHARED ${CUDA_SOURCES})
-# target_compile_options(cuda_lib PRIVATE -G)  # 启用调试信息
 # target_link_libraries(cuda_lib ${CUDA_LIBRARIES})
 add_executable(cuda main.cu src/matmul.cu)
 # 链接编译后生成的库

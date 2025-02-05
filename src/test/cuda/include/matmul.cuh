@@ -12,6 +12,7 @@
 #pragma once
 
 #include <cuda_runtime.h>
+#include <sys/types.h>
 
 /**
  * @brief 矩阵转置的实现
@@ -87,5 +88,108 @@ __global__ void sgemm_gmem_coalesce(int M, int N, int K, float alpha, const floa
             tmp += A[ cRow * K + i ] * B[ i * N + cCol ]; // warp 内的线程会同步执行同一条指令
         }
         C[ cRow * N + cCol ] = alpha * tmp + beta * C[ cRow * N + cCol ];
+    }
+}
+
+template <const uint TM = 32, const uint BM = 32, const uint BN = 32, const uint BK = 32>
+__global__ void sgemm_1d_blocktiling(int M, int N, int K, float alpha, const float *A,
+                                     const float *B, float beta, float *C) {
+
+    __shared__ float As[ BM * BK ];
+    __shared__ float Bs[ BK * BN ];
+
+    /// thread 与 C 映射 单block的线程数为 BM * BN / TM,单线程处理C中block的竖着的TM个元素
+    const int cRow = blockIdx.y * BM; /// 一个block对应C的行号
+    const int cCol = blockIdx.x * BN; /// 一个block对应C的列号
+
+    const int c_threadCol = threadIdx.x % BN; /// 一个block中的线程对应C的列号
+    const int c_threadRow = threadIdx.x / BN; /// 一个block中的线程对应C的行号，单TM算作一行
+
+    //// a 和 b block的起始位置
+    const int aRow = blockIdx.y * BM; /// 一个block对应a的行号
+    const int bCol = blockIdx.x * BN; /// 一个block对应b的列号
+
+    float threadResults[ TM ]; /// 单个线程会计算TM个结果，将他们临时存储最后在写入C
+    ///__shared__ float Cs[ BM * BK ];
+
+    for (auto i = 0; i < TM; i++) {
+        threadResults[ i ] = 0.0;
+    }
+
+    for (auto i = 0; i < K; i += BK) {
+        /// 先将A和B的相应内存快加载到共享内存中
+        /// A 单线程复制 TM长度的一列， 我们默认 BK <= BN & BK <= BM
+        for (auto j = 0; j < TM; j++) /// 在同一个warp执行
+        {
+            auto s_row = c_threadRow * TM + j;
+            if (c_threadCol < BK && aRow + s_row < M && i + c_threadCol < K && s_row < BM) {
+                As[ s_row * BK + c_threadCol ] = A[ (aRow + s_row) * K + i + c_threadCol ];
+            }
+            if (bCol + c_threadCol < N && i + s_row < K && s_row < BK) {
+                Bs[ s_row * BN + c_threadCol ] = B[ (i + s_row) * N + bCol + c_threadCol ];
+            }
+        }
+        __syncthreads();
+
+        for (auto k = 0; k < TM; ++k) {
+            float tmp = 0.0;
+            auto s_row = c_threadRow * TM + k;
+            for (auto j = 0; j < BK; ++j) {
+                tmp += As[ s_row * BK + j ] * Bs[ j * BN + c_threadCol ];
+            }
+            threadResults[ k ] += tmp;
+        }
+        /// 同一个block 不仅仅只有一个warp，所以需要同步
+        __syncthreads();
+    }
+
+    for (auto i = 0; i < TM; ++i) {
+        if (cRow + c_threadRow * TM + i < M && cCol + c_threadCol < N) {
+            C[ (cRow + c_threadRow * TM + i) * N + cCol + c_threadCol ] =
+                alpha * threadResults[ i ] +
+                beta * C[ (cRow + c_threadRow * TM + i) * N + cCol + c_threadCol ];
+        }
+    }
+}
+
+template <const uint BM = 32, const uint BN = 32, const uint BK = 32>
+__global__ void sgemm_share(int M, int N, int K, float alpha, const float *A, const float *B,
+                            float beta, float *C) {
+
+    __shared__ float As[ BM * BK ];
+    __shared__ float Bs[ BK * BN ];
+
+    /// thread 与 C 映射 单block的线程数为 BM * BN / TM,单线程处理C中block的竖着的TM个元素
+    const int cRow = blockIdx.y * BM; /// 一个block对应C的行号
+    const int cCol = blockIdx.x * BN; /// 一个block对应C的列号
+
+    const int c_threadCol = threadIdx.x % BN; /// 一个block中的线程对应C的列号
+    const int c_threadRow = threadIdx.x / BN; /// 一个block中的线程对应C的行号，单TM算作一行
+
+    //// a 和 b block的起始位置
+    const int aRow = blockIdx.y * BM; /// 一个block对应a的行号
+    const int bCol = blockIdx.x * BN; /// 一个block对应b的列号
+    float tmp = 0.0;
+    if (cCol + c_threadCol < N && cRow + c_threadRow < M) {
+        for (auto i = 0; i < K; i += BK) {
+            /// 先将A和B的相应内存快加载到共享内存中
+            auto s_row = c_threadRow;
+            if (c_threadCol < BK && aRow + s_row < M && i + c_threadCol < K && s_row < BM) {
+                As[ s_row * BK + c_threadCol ] = A[ (aRow + s_row) * K + i + c_threadCol ];
+            }
+            if (bCol + c_threadCol < N && i + s_row < K && s_row < BK) {
+                Bs[ s_row * BN + c_threadCol ] = B[ (i + s_row) * N + bCol + c_threadCol ];
+            }
+            __syncthreads();
+            for (auto j = 0; j < BK; ++j) {
+                tmp += As[ s_row * BK + j ] * Bs[ j * BN + c_threadCol ];
+            }
+            /// 同一个block 不仅仅只有一个warp，所以需要同步
+            __syncthreads();
+        }
+        if (cRow + c_threadRow < M && cCol + c_threadCol < N) {
+            C[ (cRow + c_threadRow) * N + cCol + c_threadCol ] =
+                alpha * tmp + beta * C[ (cRow + c_threadRow) * N + cCol + c_threadCol ];
+        }
     }
 }

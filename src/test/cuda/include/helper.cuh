@@ -40,7 +40,7 @@
 #define CUTLASS_CHECK(error)                                                                       \
     if (error != cutlass::Status::kSuccess) {                                                      \
         std::cerr << "Got cutlass error: " << cutlassGetStatusString(error) << " at: " << __FILE__ \
-                  << " " << __LINE__ << "\n";                                                      \
+                  << ":" << __LINE__ << "\n";                                                      \
         exit(EXIT_FAILURE);                                                                        \
     }
 
@@ -50,7 +50,7 @@
 #define CUDA_CHECK(error)                                                 \
     if (error != cudaSuccess) {                                           \
         std::cerr << "Got bad cuda status: " << cudaGetErrorString(error) \
-                  << " at line: " << __FILE__ << " " << __LINE__ << "\n"; \
+                  << " at line: " << __FILE__ << ":" << __LINE__ << "\n"; \
         exit(EXIT_FAILURE);                                               \
     }
 
@@ -59,8 +59,8 @@
  */
 struct GpuTimer {
     cudaStream_t _stream_id{nullptr};
-    cudaEvent_t  _start;
-    cudaEvent_t  _stop;
+    cudaEvent_t _start;
+    cudaEvent_t _stop;
 
     /// Constructor
     GpuTimer() {
