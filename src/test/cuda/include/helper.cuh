@@ -54,6 +54,13 @@
         exit(EXIT_FAILURE);                                               \
     }
 
+#define CUDA_CHECK_LAST_ERROR()                                           \
+    cudaError_t err = cudaGetLastError();                                 \
+    if (err != cudaSuccess) {                                             \
+        std::cerr << "Got bad cuda status: " << cudaGetErrorString(err)   \
+                  << " at line: " << __FILE__ << ":" << __LINE__ << "\n"; \
+    }
+
 /**
  * GPU timer for recording the elapsed time across kernel(s) launched in GPU stream
  */

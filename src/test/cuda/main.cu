@@ -22,16 +22,16 @@ public:
         if (M != other.M || N != other.N) {
             return false;
         }
-        bool res = true;
+        // bool res = true;
         for (auto i = 0; i < M * N; i++) {
             if (!FLOAT_EQUAL(c[ i ], other.c[ i ])) {
                 std::cout << "c[" << i << "]:" << c[ i ] << " other.c[" << i << "]:" << other.c[ i ]
                           << std::endl;
-                res = res ? false : res;
-                // return false;
+                // res = res ? false : res;
+                return false;
             }
         }
-        return res;
+        return true;
     }
 
     void SaveResult() {
@@ -102,6 +102,7 @@ int main() {
         exit(EXIT_FAILURE);
     };
 #if 1
+#if 0
     std::cout << "sgemm_share \n";
     for (auto i = 0; i < 6; i++) {
         uint64_t m = M << i;
@@ -158,15 +159,18 @@ int main() {
         uint64_t k = K << i;
         int64_t flops = 2 * m * n * k;
         const uint TM = 8;
+        const uint BM = 32;
+        const uint BN = 32;
+        const uint BK = 32;
         MutAnalogMatrix mat(m, n, k);
         MutAnalogMatrixResult rmat(m, n);
-        dim3 blockDim(32 * 32 / TM);
-        dim3 gridDim((n + 32 - 1) / 32, (m + 32 - 1) / 32);
+        dim3 blockDim(BM * BN / TM);
+        dim3 gridDim((n + BN - 1) / BN, (m + BM - 1) / BM);
         int tmp_repeat_times = repeat_times;
         timer.start();
 
         for (; tmp_repeat_times--;) {
-            sgemm_1d_blocktiling<TM>
+            sgemm_1d_blocktiling<TM, BM, BN, BK>
                 <<<gridDim, blockDim>>>(m, n, k, 1.0f, mat.d_A, mat.d_B, 0.0f, rmat.d_C);
         }
         cudaDeviceSynchronize();
@@ -176,6 +180,69 @@ int main() {
                   << "ms GFLOPS:" << (flops * repeat_times * 1e-9) / (elapsed_time / 1000)
                   << std::endl;
     }
+
+#endif
+
+    std::cout << "sgemm_2d_blocktiling \n";
+    for (auto i = 0; i < 6; i++) {
+        uint64_t m = M << i;
+        uint64_t n = N << i;
+        uint64_t k = K << i;
+        int64_t flops = 2 * m * n * k;
+        const uint TM = 8;
+        const uint TN = 8;
+        const uint BM = 128;
+        const uint BN = 128;
+        const uint BK = 8;
+        MutAnalogMatrix mat(m, n, k);
+        MutAnalogMatrixResult rmat(m, n);
+        dim3 blockDim(BM * BN / TM / TN);
+        dim3 gridDim((n + BN - 1) / BN, (m + BM - 1) / BM);
+        int tmp_repeat_times = repeat_times;
+        timer.start();
+
+        for (; tmp_repeat_times--;) {
+            sgemm_2d_blocktiling<TM, TN, BM, BN, BK>
+                <<<gridDim, blockDim>>>(m, n, k, alpha, mat.d_A, mat.d_B, beta, rmat.d_C);
+        }
+        cudaDeviceSynchronize();
+        timer.stop();
+        auto &&elapsed_time = timer.elapsed_millis();
+        std::cout << "mut size :" << m << " " << "Time: " << elapsed_time / repeat_times
+                  << "ms GFLOPS:" << (flops * repeat_times * 1e-9) / (elapsed_time / 1000)
+                  << std::endl;
+    }
+
+    std::cout << "demo sgemm_2d_blocktiling \n";
+    for (auto i = 0; i < 6; i++) {
+        uint64_t m = M << i;
+        uint64_t n = N << i;
+        uint64_t k = K << i;
+        int64_t flops = 2 * m * n * k;
+        const uint TM = 8;
+        const uint TN = 8;
+        const uint BM = 128;
+        const uint BN = 128;
+        const uint BK = 8;
+        MutAnalogMatrix mat(m, n, k);
+        MutAnalogMatrixResult rmat(m, n);
+        dim3 blockDim(BM * BN / TM / TN);
+        dim3 gridDim((n + BN - 1) / BN, (m + BM - 1) / BM);
+        int tmp_repeat_times = repeat_times;
+        timer.start();
+
+        for (; tmp_repeat_times--;) {
+            sgemm2DBlocktiling<BM, BN, BK, TM, TN>
+                <<<gridDim, blockDim>>>(m, n, k, alpha, mat.d_A, mat.d_B, beta, rmat.d_C);
+        }
+        cudaDeviceSynchronize();
+        timer.stop();
+        auto &&elapsed_time = timer.elapsed_millis();
+        std::cout << "mut size :" << m << " " << "Time: " << elapsed_time / repeat_times
+                  << "ms GFLOPS:" << (flops * repeat_times * 1e-9) / (elapsed_time / 1000)
+                  << std::endl;
+    }
+
     std::cout << "cublasGemmEx \n";
     for (auto i = 0; i < 6; i++) {
         uint64_t m = M << i;
@@ -219,13 +286,16 @@ int main() {
                 cudaDeviceSynchronize();
                 mata.SaveResult();
             }
-
+#if 0
             {
                 MutAnalogMatrixResult matb(m, n);
                 const uint TM = 8;
-                dim3 blockDim(32 * 32 / TM);
-                dim3 gridDim((n + 32 - 1) / 32, (m + 32 - 1) / 32);
-                sgemm_1d_blocktiling<TM>
+                const uint BM = 64;
+                const uint BN = 64;
+                const uint BK = 8;
+                dim3 blockDim(BM * BN / TM);
+                dim3 gridDim((n + BN - 1) / BN, (m + BM - 1) / BM);
+                sgemm_1d_blocktiling<TM, BM, BN, BK>
                     <<<gridDim, blockDim>>>(m, n, k, alpha, mat.d_A, mat.d_B, beta, matb.d_C);
                 cudaDeviceSynchronize();
                 matb.SaveResult();
@@ -236,6 +306,30 @@ int main() {
                     std::cout << m << " : cublasGemmEx and sgemm_1d_blocktiling is not equal"
                               << std::endl;
             }
+#endif
+
+            {
+                MutAnalogMatrixResult matb(m, n);
+                const uint TM = 8;
+                const uint TN = 8;
+                const uint BM = 128;
+                const uint BN = 128;
+                const uint BK = 32;
+                dim3 blockDim(BM * BN / TM / TN);
+                dim3 gridDim((n + BN - 1) / BN, (m + BM - 1) / BM);
+                sgemm_2d_blocktiling<TM, TN, BM, BN, BK>
+                    <<<gridDim, blockDim>>>(m, n, k, alpha, mat.d_A, mat.d_B, beta, matb.d_C);
+                CUDA_CHECK_LAST_ERROR();
+                cudaDeviceSynchronize();
+                matb.SaveResult();
+                if (mata == matb)
+                    std::cout << m << " : cublasGemmEx and sgemm_2d_blocktiling is equal"
+                              << std::endl;
+                else
+                    std::cout << m << " : cublasGemmEx and sgemm_2d_blocktiling is not equal"
+                              << std::endl;
+            }
+#if 0
             {
                 MutAnalogMatrixResult matc(m, n);
                 dim3 blockDim(32 * 32);
@@ -265,6 +359,8 @@ int main() {
                     std::cout << m << " : cublasGemmEx and sgemm_gmem_coalesce is not equal"
                               << std::endl;
             }
+
+#endif
         }
     }
 
