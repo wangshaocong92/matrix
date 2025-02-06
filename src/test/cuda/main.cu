@@ -213,6 +213,36 @@ int main() {
                   << std::endl;
     }
 
+    std::cout << "demo sgemm_2d_blocktiling_with_transpose \n";
+    for (auto i = 0; i < 6; i++) {
+        uint64_t m = M << i;
+        uint64_t n = N << i;
+        uint64_t k = K << i;
+        int64_t flops = 2 * m * n * k;
+        const uint TM = 8;
+        const uint TN = 8;
+        const uint BM = 128;
+        const uint BN = 128;
+        const uint BK = 8;
+        MutAnalogMatrix mat(m, n, k);
+        MutAnalogMatrixResult rmat(m, n);
+        dim3 blockDim(BM * BN / TM / TN);
+        dim3 gridDim((n + BN - 1) / BN, (m + BM - 1) / BM);
+        int tmp_repeat_times = repeat_times;
+        timer.start();
+
+        for (; tmp_repeat_times--;) {
+            sgemm_2d_blocktiling_with_transpose<TM, TN, BM, BN, BK>
+                <<<gridDim, blockDim>>>(m, n, k, alpha, mat.d_A, mat.d_B, beta, rmat.d_C);
+        }
+        cudaDeviceSynchronize();
+        timer.stop();
+        auto &&elapsed_time = timer.elapsed_millis();
+        std::cout << "mut size :" << m << " " << "Time: " << elapsed_time / repeat_times
+                  << "ms GFLOPS:" << (flops * repeat_times * 1e-9) / (elapsed_time / 1000)
+                  << std::endl;
+    }
+
     std::cout << "demo sgemm_2d_blocktiling \n";
     for (auto i = 0; i < 6; i++) {
         uint64_t m = M << i;
@@ -328,6 +358,31 @@ int main() {
                 else
                     std::cout << m << " : cublasGemmEx and sgemm_2d_blocktiling is not equal"
                               << std::endl;
+            }
+
+            {
+                MutAnalogMatrixResult matb(m, n);
+                const uint TM = 8;
+                const uint TN = 8;
+                const uint BM = 128;
+                const uint BN = 128;
+                const uint BK = 32;
+                dim3 blockDim(BM * BN / TM / TN);
+                dim3 gridDim((n + BN - 1) / BN, (m + BM - 1) / BM);
+                sgemm_2d_blocktiling_with_transpose<TM, TN, BM, BN, BK>
+                    <<<gridDim, blockDim>>>(m, n, k, alpha, mat.d_A, mat.d_B, beta, matb.d_C);
+                CUDA_CHECK_LAST_ERROR();
+                cudaDeviceSynchronize();
+                matb.SaveResult();
+                if (mata == matb)
+                    std::cout << m
+                              << " : cublasGemmEx and sgemm_2d_blocktiling_with_transpose is equal"
+                              << std::endl;
+                else
+                    std::cout
+                        << m
+                        << " : cublasGemmEx and sgemm_2d_blocktiling_with_transpose is not equal"
+                        << std::endl;
             }
 #if 0
             {

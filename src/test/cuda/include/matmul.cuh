@@ -248,6 +248,8 @@ __global__ __launch_bounds__(BM *BN / (TM * TN),
     const int c_sthreadRow = threadIdx.x / (BN / TN);
 
     float threadResults[ TM * TN ]{0.0}; /// 单个线程会计算TM个结果，将他们临时存储最后在写入C
+    float a[ TM ];
+    float b[ TN ];
     for (int i = 0; i < K; i += BK) {
 
         for (auto j = 0; j < a_signal_thread_load_row; j++) {
@@ -259,10 +261,99 @@ __global__ __launch_bounds__(BM *BN / (TM * TN),
         __syncthreads();
 
         for (int m = 0; m < BK; ++m) {
-            float a[ TM ];
-            float b[ TN ];
             for (int j = 0; j < TM; ++j) {
                 a[ j ] = As[ (c_sthreadRow * TM + j) * BK + m ];
+            }
+            for (int j = 0; j < TN; ++j) {
+                b[ j ] = Bs[ m * BN + c_sthreadCol * TN + j ];
+            }
+            for (int j = 0; j < TM; ++j) {
+                for (int k = 0; k < TN; ++k) {
+                    threadResults[ j * TN + k ] += a[ j ] * b[ k ];
+                }
+            }
+        }
+        __syncthreads();
+    }
+
+    for (int j = 0; j < TM; j++) {
+        for (int k = 0; k < TN; k++) {
+            auto col = (c_sthreadCol * TN) + k;
+            auto row = (c_sthreadRow * TM) + j;
+            if (cRow + row < M && cCol + col < N) {
+                C[ (cRow + row) * N + cCol + col ] =
+                    alpha * threadResults[ j * TN + k ] + beta * C[ (cRow + row) * N + cCol + col ];
+            }
+        }
+    }
+}
+
+/**
+ * @brief 2d blocktiling 矩阵乘法 block 线程数要和 BK * BM 和 BK * BN 一致。
+ *   我们默认为 BM 和 BN 一致。而线程数量为 BN * BM / (TM * TN)。
+ *   即 BN * BM / (TM * TN) == BK * BM 即 BK = BM / (TM * TN)
+ *
+ * @tparam TM
+ * @tparam TN
+ * @tparam BM
+ * @tparam BN
+ * @tparam BK
+ * @param M
+ * @param N
+ * @param K
+ * @param alpha
+ * @param A
+ * @param B
+ * @param beta
+ * @param C
+ * @return __global__
+ */
+template <const uint TM, const uint TN, const uint BM, const uint BN, const uint BK>
+__global__ __launch_bounds__(BM *BN / (TM * TN), 1) void sgemm_2d_blocktiling_with_transpose(
+    int M, int N, int K, float alpha, const float *A, const float *B, float beta, float *C) {
+    __shared__ float As[ BK * BM ]; /// 为了让A的列连续，我们将A转置
+    __shared__ float Bs[ BK * BN ];
+
+    // printf("thredIdx.x = %d\n", threadIdx.x);
+
+    // assert(BK == BM / (TM * TN));
+    // 我们不强制单个线程处理单个内存，这样会降低灵活性，我们可以强制一个
+    assert(BM == BN);
+
+    const int cRow = blockIdx.y * BM; /// 一个block对应C的行号
+    const int cCol = blockIdx.x * BN; /// 一个block对应C的列号
+
+    /// 内存copy和计算完全可以是不同的映射关系
+    //// a 中单个线程加载的列个数
+    auto a_signal_thread_load_row = BK * TM * TN / BM;
+    auto amCol = threadIdx.x % BK;
+    auto amRow = threadIdx.x / BK * a_signal_thread_load_row;
+
+    //// b 中单个线程加载的列个数
+    auto b_signal_thread_load_row = BK * TM * TN / BN;
+    auto bmCol = threadIdx.x % BN;
+    auto bmRow = threadIdx.x / BN * b_signal_thread_load_row;
+
+    //// 计算映射
+    const int c_sthreadCol = threadIdx.x % (BN / TN);
+    const int c_sthreadRow = threadIdx.x / (BN / TN);
+
+    float threadResults[ TM * TN ]{0.0}; /// 单个线程会计算TM个结果，将他们临时存储最后在写入C
+    float a[ TM ];
+    float b[ TN ];
+    for (int i = 0; i < K; i += BK) {
+        for (auto j = 0; j < a_signal_thread_load_row; j++) {
+            As[ amCol * BM + amRow + j ] = A[ (cRow + amRow + j) * K + i + amCol ];
+        }
+        for (auto j = 0; j < b_signal_thread_load_row; j++) {
+            Bs[ (bmRow + j) * BN + bmCol ] = B[ (i + bmRow + j) * N + cCol + bmCol ];
+        }
+        __syncthreads();
+
+        for (int m = 0; m < BK; ++m) {
+
+            for (int j = 0; j < TM; ++j) {
+                a[ j ] = As[ m * BM + c_sthreadRow * TM + j ];
             }
             for (int j = 0; j < TN; ++j) {
                 b[ j ] = Bs[ m * BN + c_sthreadCol * TN + j ];
