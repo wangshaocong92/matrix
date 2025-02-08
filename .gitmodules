@@ -7,3 +7,6 @@
 [submodule "doc/sgemm_cuda"]
 	path = doc/sgemm_cuda
 	url = https://github.com/siboehm/SGEMM_CUDA
+[submodule "doc/CUDA-Learn-Notes"]
+	path = doc/CUDA-Learn-Notes
+	url = https://github.com/DefTruth/CUDA-Learn-Notes.git
